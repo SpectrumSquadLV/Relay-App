@@ -405,8 +405,139 @@ async function wsClients(wrap) {
     <td>${esc(c.insurance || '—')}</td><td>${esc(c.assigned_name || '—')}</td><td><span class="pill ${c.stage === 'active' ? 'green' : 'blue'}">${esc(c.stage)}</span></td></tr>`).join('');
   wrap(`<div class="page-head"><h1>Clients</h1><p>${clients.length} active clients. Click a client to set their home address — Relay locates it on the map automatically.</p></div>
     <div class="card" style="padding:0;overflow-x:auto"><table><thead><tr><th>Client</th><th>Home address</th><th>Insurance</th><th>Assigned</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`);
-  $('#content').querySelectorAll('[data-client]').forEach(tr => tr.onclick = () => {
-    const c = clients.find(x => x.id === tr.dataset.client);
+  // Clicking a client opens the full chart. Setting the home address is still
+  // there, as a button inside the record rather than the only thing a click
+  // could do.
+  $('#content').querySelectorAll('[data-client]').forEach(tr => tr.onclick = () => clientRecord(tr.dataset.client, wrap));
+}
+
+// ---- Client record -----------------------------------------------------
+// One chart: photo, intake detail, insurance, benefits, authorization with
+// units and expiry, documents by category, and every message Relay has sent.
+// All of it from a single /record call, so nothing on screen can disagree
+// with anything else on screen.
+const DOC_CATEGORIES = {
+  intake: 'Intake', insurance: 'Insurance', authorizations: 'Authorizations',
+  assessments: 'Assessments', treatment_plans: 'Treatment Plans', medical: 'Medical Records',
+  consents: 'Consents', financial: 'Financial', referrals: 'Referrals',
+  clinical: 'Clinical', other: 'Other',
+};
+const SERVICE_LINES = { aba: 'ABA', bh: 'Behavioral Health', ot: 'Occupational Therapy', st: 'Speech Therapy' };
+const PHASES = { intake: 'Intake', assessment_auth: 'Assessment Authorization', assessment: 'Assessment', active: 'Active Client' };
+const URGENCY_PILL = { critical: 'red', urgent: 'amber', attention: 'amber', ok: 'green', expired: 'red' };
+
+async function clientRecord(clientId, wrap) {
+  let d;
+  try { d = await api('/workspace/clients/' + clientId + '/record'); }
+  catch (e) { toast('Could not open that record'); return; }
+  const c = d.client;
+  const ins = d.insurance[0] || null;
+  const el = d.eligibility;
+  const auth = d.current_authorization || d.authorizations[0] || null;
+  const fmt = (v) => (v == null || v === '' ? '—' : esc(String(v)));
+  const money = (v) => (v == null ? '—' : '$' + Number(v).toLocaleString());
+  const when = (t) => (t ? new Date(t).toLocaleDateString() : '—');
+
+  const field = (label, val) => `<div style="min-width:150px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">${label}</div><div style="font-weight:600">${val}</div></div>`;
+
+  // Benefits: the numbers somebody phoned a payer to get. Worth showing in
+  // full, because the alternative is phoning again.
+  const benefits = el && el.status === 'verified' ? `
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:10px">
+      ${field('Network', fmt(el.network_status === 'in_network' ? 'In network' : el.network_status))}
+      ${field('Deductible', money(el.deductible) + ' <span style="font-weight:400;color:var(--muted)">(' + money(el.deductible_remaining) + ' left)</span>')}
+      ${field('Copay', money(el.copay))}
+      ${field('Coinsurance', el.coinsurance == null ? '—' : el.coinsurance + '%')}
+      ${field('Out of pocket', money(el.oop_max) + ' <span style="font-weight:400;color:var(--muted)">(' + money(el.oop_remaining) + ' left)</span>')}
+      ${field('Auth required', el.auth_required ? 'Yes' : 'No')}
+      ${field('Visit limit', fmt(el.visit_limit))}
+      ${field('Call reference', fmt(el.call_reference))}
+    </div>` : `<div style="margin-top:8px;color:var(--muted);font-size:13px">${el && el.notes ? esc(el.notes) : 'Benefits not verified yet.'}</div>`;
+
+  const docSections = Object.keys(d.documents).map(cat => `
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:4px">${esc(DOC_CATEGORIES[cat] || cat)}</div>
+      ${d.documents[cat].map(x => `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line,#eee)">
+        <span>${esc(x.label || x.filename)}${x.is_required ? ' <span class="pill blue" style="font-size:10px">required</span>' : ''}</span>
+        <span style="color:var(--muted);font-size:12px">${when(x.created_at)}</span></div>`).join('')}
+    </div>`).join('') || '<div style="color:var(--muted)">No documents yet.</div>';
+
+  const mailRows = d.mailbox.map(m => `<div style="padding:7px 0;border-bottom:1px solid var(--line,#eee)">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <b>${esc(m.subject || '(no subject)')}</b>
+        <span style="color:var(--muted);font-size:12px">${new Date(m.created_at).toLocaleString()}</span></div>
+      <div style="font-size:12.5px;color:var(--muted)">to ${esc(m.to_addr || '—')} · ${esc(m.channel)} · <span class="pill ${m.status === 'sent' ? 'green' : 'amber'}" style="font-size:10px">${esc(m.status)}</span></div>
+      <div style="font-size:12.5px;margin-top:2px">${esc(m.body || '')}</div>
+    </div>`).join('') || '<div style="color:var(--muted)">Nothing sent yet.</div>';
+
+  const m = document.createElement('div'); m.className = 'modal-bg';
+  m.innerHTML = `<div class="modal" style="width:900px;max-width:96vw">
+    <div class="modal-h" style="display:flex;align-items:center;gap:12px">
+      <img src="${esc(c.photo_url || '')}" alt="" style="width:48px;height:48px;border-radius:50%;background:#e5e7eb;object-fit:cover">
+      <div style="flex:1">
+        <div>${esc(c.client_name)}</div>
+        <div style="font-size:12px;font-weight:400;color:var(--muted)">
+          ${esc(SERVICE_LINES[c.service_line] || c.service_line || '')} · ${esc(PHASES[c.phase] || c.phase || '')}
+          ${c.dob ? ' · DOB ' + esc(c.dob) : ''}
+        </div>
+      </div>
+      ${auth && auth.urgency && auth.urgency !== 'ok' ? `<span class="pill ${URGENCY_PILL[auth.urgency] || 'amber'}">Auth ${auth.days_left < 0 ? 'expired' : auth.days_left + 'd left'}</span>` : ''}
+    </div>
+    <div class="modal-b" style="max-height:66vh;overflow:auto">
+      <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px">
+        ${field('Guardian', fmt(c.guardian_name) + (c.guardian_relationship ? ' <span style="font-weight:400;color:var(--muted)">(' + esc(c.guardian_relationship) + ')</span>' : ''))}
+        ${field('Phone', fmt(c.phone))}
+        ${field('Email', fmt(c.email))}
+        ${field('Diagnosis', fmt(c.diagnosis))}
+        ${field('Referral', fmt(c.referral_source))}
+      </div>
+
+      <div class="card" style="margin-bottom:12px">
+        <b>Insurance &amp; Benefits</b>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px">
+          ${field('Carrier', fmt(ins && ins.carrier))}
+          ${field('Member ID', fmt(ins && ins.member_id))}
+          ${field('Group', fmt(ins && ins.group_number))}
+          ${field('Subscriber', fmt(ins && ins.subscriber_name))}
+          ${field('Card on file', ins ? ((ins.card_front_path ? 'Front' : '') + (ins.card_back_path ? ' + Back' : ins.card_front_path ? ' <span class="pill amber" style="font-size:10px">back missing</span>' : '')) || '—' : '—')}
+          ${field('Verification', `<span class="pill ${el && el.status === 'verified' ? 'green' : 'amber'}">${fmt(el && el.status)}</span>`)}
+        </div>
+        ${benefits}
+      </div>
+
+      ${auth ? `<div class="card" style="margin-bottom:12px">
+        <b>Authorization</b>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px">
+          ${field('Type', fmt(auth.kind))}
+          ${field('Status', `<span class="pill ${auth.status === 'approved' ? 'green' : 'amber'}">${fmt(auth.status)}</span>`)}
+          ${field('Auth #', fmt(auth.auth_number))}
+          ${field('CPT', fmt(auth.cpt_codes))}
+          ${field('Units', auth.approved_units == null ? '—' : `${auth.units_remaining} left <span style="font-weight:400;color:var(--muted)">of ${auth.approved_units}</span>`)}
+          ${field('Dates', `${when(auth.start_date)} – ${when(auth.end_date)}`)}
+          ${field('Expires in', auth.days_left == null ? '—' : `<span class="pill ${URGENCY_PILL[auth.urgency] || 'green'}">${auth.days_left} days</span>`)}
+        </div>
+      </div>` : ''}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="card"><b>Documents</b> <span style="color:var(--muted);font-size:12px">(${d.document_count})</span>
+          <div style="margin-top:8px">${docSections}</div></div>
+        <div class="card"><b>Outgoing mail</b> <span style="color:var(--muted);font-size:12px">(${d.mailbox.length})</span>
+          <div style="margin-top:8px;max-height:340px;overflow:auto">${mailRows}</div></div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-ghost" id="cr_addr">Home address</button>
+      <button class="btn btn-primary" id="cr_close">Close</button>
+    </div></div>`;
+  document.body.appendChild(m);
+  $('#cr_close', m).onclick = () => m.remove();
+  m.onclick = (e) => { if (e.target === m) m.remove(); };
+  // The address editor this click used to open, preserved.
+  $('#cr_addr', m).onclick = () => { m.remove(); clientAddress(c, wrap); };
+}
+
+function clientAddress(c, wrap) {
+  {
     const m = document.createElement('div'); m.className = 'modal-bg';
     m.innerHTML = `<div class="modal"><div class="modal-h">${esc(c.client_name)} — home address</div><div class="modal-b">
       <div class="fld"><label>Street address</label><input id="cl_addr" value="${esc(c.address || '')}" placeholder="1420 E Charleston Blvd, Las Vegas NV"></div>
@@ -420,7 +551,7 @@ async function wsClients(wrap) {
       const r = await api('/workspace/clients/' + c.id, { method: 'PATCH', body: { address: $('#cl_addr', m).value, zip: $('#cl_zip', m).value } });
       m.remove(); toast(r.geocoded ? '📍 Located on map' : 'Saved — could not locate right now (try again in a moment)'); wsClients(wrap);
     };
-  });
+  }
 }
 
 async function wsTasks(wrap) {
