@@ -30,6 +30,9 @@ app.use(session({
 app.use('/api/auth', authRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/workspace', workspaceRoutes);
+// Public intake. Deliberately outside the authenticated routers: a family
+// opens this link on a phone with no account. Scoped by practice slug.
+app.use('/api', require('./src/routes/intakeRoutes'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

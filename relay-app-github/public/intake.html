@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>New Patient Intake</title>
+<style>
+  :root { --ink:#1b2230; --muted:#6b7280; --line:#e5e7eb; --brand:#3E7C5D; --bg:#f6f7f9; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:680px; margin:0 auto; padding:0 16px 64px; }
+  header { background:var(--brand); color:#fff; padding:28px 16px 22px; }
+  header .in { max-width:680px; margin:0 auto; }
+  header h1 { margin:0 0 4px; font-size:22px; }
+  header p { margin:0; opacity:.9; font-size:14px; }
+  .bar { height:4px; background:rgba(255,255,255,.25); border-radius:99px; margin-top:16px; overflow:hidden; }
+  .bar i { display:block; height:100%; background:#fff; width:20%; transition:width .3s; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:18px; margin-top:16px; }
+  .card h2 { margin:0 0 2px; font-size:16px; }
+  .card .sub { margin:0 0 14px; color:var(--muted); font-size:13px; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 5px; }
+  .req::after { content:" *"; color:#b91c1c; }
+  input,select,textarea { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px;
+                          font:inherit; background:#fff; }
+  input:focus,select:focus,textarea:focus { outline:2px solid var(--brand); outline-offset:1px; border-color:var(--brand); }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:520px) { .row { grid-template-columns:1fr; } }
+  .services { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:6px; }
+  .svc { border:2px solid var(--line); border-radius:12px; padding:14px; text-align:center; cursor:pointer;
+         font-weight:600; font-size:14px; background:#fff; }
+  .svc[aria-pressed="true"] { border-color:var(--brand); background:#eef6f1; color:var(--brand); }
+  .shot { border:2px dashed var(--line); border-radius:12px; padding:18px; text-align:center; cursor:pointer;
+          background:#fafbfc; }
+  .shot.filled { border-style:solid; border-color:var(--brand); background:#eef6f1; padding:8px; }
+  .shot img { max-width:100%; border-radius:8px; display:block; }
+  .shot .hint { font-size:13px; color:var(--muted); margin-top:4px; }
+  .shot .big { font-size:26px; }
+  .btn { width:100%; padding:15px; border:0; border-radius:12px; background:var(--brand); color:#fff;
+         font-size:16px; font-weight:600; cursor:pointer; margin-top:20px; }
+  .btn[disabled] { opacity:.6; }
+  .err { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px 12px; border-radius:10px;
+         font-size:14px; margin-top:14px; }
+  .ok { text-align:center; padding:44px 20px; }
+  .ok .tick { font-size:52px; }
+  .note { font-size:12.5px; color:var(--muted); margin-top:8px; }
+  .hide { display:none; }
+</style>
+</head>
+<body>
+<header><div class="in">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+      <circle cx="16" cy="16" r="15" fill="rgba(255,255,255,.16)"/>
+      <path d="M10 22V10h6a4 4 0 0 1 0 8h-3l5 4" fill="none" stroke="#fff" stroke-width="2.4"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span style="font-weight:700;letter-spacing:.02em">Relay</span>
+    <span style="opacity:.6">·</span>
+    <span id="brandline" style="opacity:.85;font-size:14px">New Patient Intake</span>
+  </div>
+  <h1 id="pname">New Patient Intake</h1>
+  <p id="psub">A few details so we can get started and verify your benefits.</p>
+  <div class="bar"><i id="bar"></i></div>
+</div></header>
+
+<div class="wrap" id="app">
+  <form id="f" novalidate>
+
+    <div class="card">
+      <h2>Which service are you seeking?</h2>
+      <p class="sub">This tailors the rest of the form.</p>
+      <div class="services" id="svc"></div>
+    </div>
+
+    <div class="card">
+      <h2>Patient</h2>
+      <p class="sub">The person who will receive services.</p>
+      <div class="row">
+        <div><label class="req" for="first_name">Legal first name</label><input id="first_name" name="first_name" autocomplete="given-name"></div>
+        <div><label for="middle_name">Middle name</label><input id="middle_name" name="middle_name"></div>
+      </div>
+      <div class="row">
+        <div><label class="req" for="last_name">Legal last name</label><input id="last_name" name="last_name" autocomplete="family-name"></div>
+        <div><label for="preferred_name">Preferred name</label><input id="preferred_name" name="preferred_name"></div>
+      </div>
+      <div class="row">
+        <div><label for="dob">Date of birth</label><input id="dob" name="dob" type="date"></div>
+        <div><label for="sex">Sex</label><select id="sex" name="sex">
+          <option value="">Select…</option><option>Female</option><option>Male</option><option>Prefer not to say</option>
+        </select></div>
+      </div>
+      <label for="address">Home address</label><input id="address" name="address" autocomplete="street-address">
+      <div class="row">
+        <div><label for="city">City</label><input id="city" name="city" autocomplete="address-level2"></div>
+        <div><label for="zip">ZIP</label><input id="zip" name="zip" inputmode="numeric" autocomplete="postal-code"></div>
+      </div>
+      <div class="row">
+        <div><label for="language">Primary language</label><input id="language" name="language" placeholder="English"></div>
+        <div><label for="preferred_contact">Preferred contact</label><select id="preferred_contact" name="preferred_contact">
+          <option>Email</option><option>Phone call</option><option>Text message</option>
+        </select></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Parent or guardian</h2>
+      <p class="sub">Who we should contact about care.</p>
+      <div class="row">
+        <div><label for="guardian_name">Full name</label><input id="guardian_name" name="guardian_name" autocomplete="name"></div>
+        <div><label for="guardian_relationship">Relationship</label><select id="guardian_relationship" name="guardian_relationship">
+          <option value="">Select…</option><option>Mother</option><option>Father</option><option>Grandparent</option><option>Legal guardian</option><option>Self</option><option>Other</option>
+        </select></div>
+      </div>
+      <div class="row">
+        <div><label for="guardian_phone">Phone</label><input id="guardian_phone" name="guardian_phone" type="tel" inputmode="tel" autocomplete="tel"></div>
+        <div><label for="guardian_email">Email</label><input id="guardian_email" name="guardian_email" type="email" inputmode="email" autocomplete="email"></div>
+      </div>
+      <label for="emergency_contact">Emergency contact</label><input id="emergency_contact" name="emergency_contact" placeholder="Name and phone number">
+    </div>
+
+    <div class="card">
+      <h2>Referral &amp; diagnosis</h2>
+      <p class="sub">If you have this information. You can leave it blank.</p>
+      <div class="row">
+        <div><label for="referral_source">How did you hear about us?</label><input id="referral_source" name="referral_source"></div>
+        <div><label for="referring_provider">Referring provider</label><input id="referring_provider" name="referring_provider"></div>
+      </div>
+      <div class="row">
+        <div><label for="diagnosis">Diagnosis</label><input id="diagnosis" name="diagnosis" placeholder="If one has been given"></div>
+        <div><label for="diagnosis_date">Date of diagnosis</label><input id="diagnosis_date" name="diagnosis_date" type="date"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Insurance</h2>
+      <p class="sub">We verify your benefits before services begin.</p>
+      <div class="row">
+        <div><label for="carrier">Insurance company</label><input id="carrier" name="carrier" placeholder="Aetna, Cigna, UnitedHealthcare…"></div>
+        <div><label for="member_id">Member ID</label><input id="member_id" name="member_id"></div>
+      </div>
+      <div class="row">
+        <div><label for="group_number">Group number</label><input id="group_number" name="group_number"></div>
+        <div><label for="subscriber_name">Subscriber name</label><input id="subscriber_name" name="subscriber_name"></div>
+      </div>
+      <div class="row">
+        <div><label for="subscriber_dob">Subscriber date of birth</label><input id="subscriber_dob" name="subscriber_dob" type="date"></div>
+        <div><label for="subscriber_relationship">Patient is the subscriber's…</label><select id="subscriber_relationship" name="subscriber_relationship">
+          <option value="">Select…</option><option>Self</option><option>Child</option><option>Spouse</option><option>Other</option>
+        </select></div>
+      </div>
+
+      <label>Photo of the insurance card</label>
+      <p class="note" style="margin-top:0">Both sides, please — benefits cannot be verified without them. On a phone this opens your camera.</p>
+      <div class="row" style="margin-top:8px">
+        <div>
+          <div class="shot" id="shot_front" tabindex="0" role="button" aria-label="Add front of insurance card">
+            <div class="big">📇</div><div><b>Front of card</b></div><div class="hint">Tap to take a photo</div>
+          </div>
+          <input class="hide" type="file" id="card_front" accept="image/*" capture="environment">
+        </div>
+        <div>
+          <div class="shot" id="shot_back" tabindex="0" role="button" aria-label="Add back of insurance card">
+            <div class="big">🔄</div><div><b>Back of card</b></div><div class="hint">Tap to take a photo</div>
+          </div>
+          <input class="hide" type="file" id="card_back" accept="image/*" capture="environment">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Anything else?</h2>
+      <p class="sub">Optional — anything you would like us to know.</p>
+      <textarea id="notes" name="notes" rows="3"></textarea>
+    </div>
+
+    <div id="err" class="err hide"></div>
+    <button class="btn" id="submit" type="submit">Submit intake</button>
+    <p class="note" style="text-align:center">Your information is submitted securely to the practice.</p>
+  </form>
+
+  <div id="done" class="ok hide">
+    <div class="tick">✅</div>
+    <h2 id="done_h">Thank you</h2>
+    <p id="done_p" style="color:var(--muted)"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var params = new URLSearchParams(location.search);
+  var slug = params.get('p') || params.get('practice') || 'relay-demo';
+  var service = 'aba';
+  var cards = { front: null, back: null };
+
+  // Practice name + service list. If the lookup fails the form still works --
+  // a family should never hit a dead page because a config call failed.
+  fetch('/api/intake/' + encodeURIComponent(slug) + '/config')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (cfg) {
+      if (cfg && cfg.practice) {
+        document.title = cfg.practice.name + ' — New Patient Intake';
+        $('#pname').textContent = cfg.practice.name;
+      }
+      var list = (cfg && cfg.services) || [
+        { key: 'aba', label: 'ABA Therapy' }, { key: 'bh', label: 'Behavioral Health' },
+        { key: 'ot', label: 'Occupational Therapy' }, { key: 'st', label: 'Speech Therapy' }];
+      $('#svc').innerHTML = list.map(function (s, i) {
+        return '<button type="button" class="svc" data-k="' + s.key + '" aria-pressed="' + (i === 0) + '">' + s.label + '</button>';
+      }).join('');
+      if (list[0]) service = list[0].key;
+      Array.prototype.forEach.call(document.querySelectorAll('.svc'), function (b) {
+        b.onclick = function () {
+          Array.prototype.forEach.call(document.querySelectorAll('.svc'), function (x) { x.setAttribute('aria-pressed', 'false'); });
+          b.setAttribute('aria-pressed', 'true');
+          service = b.dataset.k;
+        };
+      });
+    })
+    .catch(function () {});
+
+  // Progress bar: how much of the form is filled, so a long form on a phone
+  // still feels finite.
+  function progress() {
+    var fields = document.querySelectorAll('#f input, #f select, #f textarea');
+    var total = 0, done = 0;
+    Array.prototype.forEach.call(fields, function (el) {
+      if (el.type === 'file') return;
+      total++; if (el.value) done++;
+    });
+    total += 2; if (cards.front) done++; if (cards.back) done++;
+    $('#bar').style.width = Math.max(8, Math.round((done / total) * 100)) + '%';
+  }
+  document.addEventListener('input', progress);
+
+  // Card capture. Downscaled in the browser before upload -- a modern phone
+  // photo is several megabytes and none of that resolution is needed to read
+  // a member ID.
+  function wire(side) {
+    var box = $('#shot_' + side), input = $('#card_' + side);
+    box.onclick = function () { input.click(); };
+    box.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } };
+    input.onchange = function () {
+      var file = input.files && input.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          var max = 1400, w = img.width, h = img.height;
+          if (w > max || h > max) { var s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+          var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          var data = cv.toDataURL('image/jpeg', 0.82);
+          cards[side] = data;
+          box.className = 'shot filled';
+          box.innerHTML = '<img src="' + data + '" alt="' + side + ' of insurance card"><div class="hint">Tap to retake</div>';
+          progress();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    };
+  }
+  wire('front'); wire('back');
+
+  $('#f').onsubmit = function (e) {
+    e.preventDefault();
+    var body = {};
+    Array.prototype.forEach.call(document.querySelectorAll('#f input, #f select, #f textarea'), function (el) {
+      if (el.name && el.type !== 'file') body[el.name] = el.value;
+    });
+    body.service_line = service;
+    body.card_front = cards.front;
+    body.card_back = cards.back;
+
+    var err = $('#err');
+    if (!body.first_name || !body.last_name) {
+      err.textContent = 'Please enter the patient’s first and last name.';
+      err.className = 'err'; window.scrollTo({ top: 0, behavior: 'smooth' }); return;
+    }
+    if (!body.guardian_email && !body.guardian_phone) {
+      err.textContent = 'Please give us either an email address or a phone number so we can reach you.';
+      err.className = 'err'; return;
+    }
+    err.className = 'err hide';
+
+    var btn = $('#submit'); btn.disabled = true; btn.textContent = 'Submitting…';
+    fetch('/api/intake/' + encodeURIComponent(slug), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d && res.d.error ? res.d.error : 'Something went wrong.');
+        $('#f').className = 'hide';
+        $('#done').className = 'ok';
+        $('#done_h').textContent = 'Thank you' + (res.d.name ? ', we have ' + res.d.name + '’s information' : '');
+        $('#done_p').textContent = res.d.card_complete
+          ? 'We are verifying your benefits now and will be in touch shortly.'
+          : 'We still need a photo of the insurance card — we have emailed you about it.';
+        window.scrollTo({ top: 0 });
+      })
+      .catch(function (e) {
+        err.textContent = e.message; err.className = 'err';
+        btn.disabled = false; btn.textContent = 'Submit intake';
+      });
+  };
+
+  progress();
+})();
+</script>
+</body>
+</html>
