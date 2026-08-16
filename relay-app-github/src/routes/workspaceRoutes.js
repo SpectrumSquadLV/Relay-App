@@ -142,6 +142,49 @@ router.get('/clients', (req, res) => {
   res.json({ clients: Repo.list(req.orgId, 'clients', '', [], 'ORDER BY created_at DESC').map(c => ({ ...c, assigned_name: smap[c.assigned_user_id] || null })) });
 });
 
+// The full client record: everything Relay knows about one person, in one
+// call. Insurance, benefits, authorizations, documents and the outgoing
+// mailbox are the things a practice actually opens a chart to check, so they
+// arrive together rather than as six round trips.
+//
+// Every read goes through Repo, which requires the orgId, so a client
+// belonging to another practice cannot be fetched even with a valid id.
+router.get('/clients/:id/record', (req, res) => {
+  const client = Repo.one(req.orgId, 'clients', req.params.id);
+  if (!client) return res.status(404).json({ error: 'Not found' });
+
+  const insurance = Repo.list(req.orgId, 'client_insurance', 'client_id = ?', [client.id], 'ORDER BY rank');
+  const eligibility = Repo.list(req.orgId, 'eligibility_checks', 'client_id = ?', [client.id], 'ORDER BY created_at DESC');
+  const authorizations = Repo.list(req.orgId, 'authorizations', 'client_id = ?', [client.id], 'ORDER BY created_at DESC');
+  const documents = Repo.list(req.orgId, 'client_documents', 'client_id = ? AND COALESCE(archived,0) = 0', [client.id], 'ORDER BY category, created_at DESC');
+  const messages = Repo.list(req.orgId, 'messages', "entity_type = 'client' AND entity_id = ?", [client.id], 'ORDER BY created_at DESC');
+  const activity = Repo.list(req.orgId, 'activity_logs', "entity_type = 'client' AND entity_id = ?", [client.id], 'ORDER BY created_at DESC');
+
+  // Units remaining and days-to-expiry are the numbers a chart is opened for,
+  // so they are computed once here rather than left to each caller to derive
+  // slightly differently.
+  const { authUrgency, daysUntil } = require('../clinical');
+  const auths = authorizations.map((a) => ({
+    ...a,
+    units_remaining: a.approved_units != null ? Number(a.approved_units) - Number(a.used_units || 0) : null,
+    days_left: daysUntil(a.end_date),
+    urgency: authUrgency(a.end_date),
+  }));
+  const current = auths.find((a) => a.status === 'approved' && a.urgency !== 'expired') || null;
+
+  // Grouped the way the chart displays them.
+  const byCategory = {};
+  for (const d of documents) (byCategory[d.category || 'other'] ||= []).push(d);
+
+  res.json({
+    client, insurance,
+    eligibility: eligibility[0] || null, eligibility_history: eligibility,
+    authorizations: auths, current_authorization: current,
+    documents: byCategory, document_count: documents.length,
+    mailbox: messages, activity,
+  });
+});
+
 // Tasks
 router.get('/tasks', (req, res) => {
   const smap = staffMap(req.orgId);
