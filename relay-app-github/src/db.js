@@ -229,8 +229,7 @@ const Repo = {
 
 module.exports = { db, run, get, all, Repo, id, now, TENANT_TABLES };
 
-// Clinical schema is created after the core tables exist, because it adds
-// columns to `clients`. Required at the end, and lazily, so the circular
-// import (clinical.js needs db's helpers) resolves cleanly.
-try { require('./clinical').ensureClinicalSchema(); }
-catch (e) { console.error('clinical schema init failed:', e.message); }
+// The clinical schema is NOT created here. clinical.js requires this module,
+// so calling it from inside db.js is a cycle: whichever file is required first
+// sees the other half-initialised. server.js calls ensureClinicalSchema()
+// after db.js has fully loaded instead.

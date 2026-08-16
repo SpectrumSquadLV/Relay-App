@@ -10,6 +10,13 @@ const authRoutes = require('./src/routes/authRoutes');
 const ownerRoutes = require('./src/routes/ownerRoutes');
 const workspaceRoutes = require('./src/routes/workspaceRoutes');
 
+// Clinical tables (insurance, eligibility, authorizations, documents,
+// credentials) plus the additive columns on clients. Called here rather than
+// from db.js: clinical.js requires db.js, so doing it there is a circular
+// import where whichever file loads first sees the other half-initialised.
+// Runs before bootstrap so the demo seed can write to these tables.
+require('./src/clinical').ensureClinicalSchema();
+
 bootstrap();
 
 const app = express();
