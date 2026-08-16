@@ -181,7 +181,12 @@ const TENANT_TABLES = new Set([
   'leads','clients','tasks','messages','message_templates','automations',
   'automation_runs','activity_logs','feature_flags','usage_records','tags',
   'lead_sources','pipelines','pipeline_stages','organization_users',
-  'rbt_timecards','supervision_sessions','automation_jobs'
+  'rbt_timecards','supervision_sessions','automation_jobs',
+  // Clinical domain (src/clinical.js). Registered here so tenant scoping
+  // applies to them exactly as it does to leads and clients -- a practice can
+  // never read another practice's insurance, benefits or documents.
+  'client_insurance','eligibility_checks','authorizations',
+  'client_documents','staff_profiles','staff_credentials'
 ]);
 
 // Repo: the ONLY sanctioned way to read/write tenant data.
@@ -223,3 +228,9 @@ const Repo = {
 };
 
 module.exports = { db, run, get, all, Repo, id, now, TENANT_TABLES };
+
+// Clinical schema is created after the core tables exist, because it adds
+// columns to `clients`. Required at the end, and lazily, so the circular
+// import (clinical.js needs db's helpers) resolves cleanly.
+try { require('./clinical').ensureClinicalSchema(); }
+catch (e) { console.error('clinical schema init failed:', e.message); }
