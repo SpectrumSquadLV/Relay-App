@@ -34,6 +34,20 @@ function bootstrap() {
     seedDemoContent(org.id);
   }
 
+  // Clinical layer for the demo practice: active clients across ABA,
+  // Behavioural Health, OT and Speech with insurance, benefits verification,
+  // authorizations, documents and communication history, plus a staff
+  // directory with credentials at every stage of expiry.
+  //
+  // Outside the is_demo guard above and idempotent in its own right, so a
+  // database seeded before this existed picks the clinical data up on its next
+  // boot instead of staying half-populated forever.
+  const demoOrg = get(`SELECT id FROM organizations WHERE is_demo=1 LIMIT 1`);
+  if (demoOrg) {
+    try { require('./clinical-demo').seedClinicalDemo(demoOrg.id); }
+    catch (e) { console.error('clinical demo seed failed:', e.message); }
+  }
+
   // a couple of extra sample customer orgs so the owner portal isn't empty
   if (get(`SELECT COUNT(*) c FROM organizations`).c < 3) {
     const a = provisionOrg({ name:'Bright Steps ABA', owner_name:'Maria Lopez', owner_email:'maria@brightsteps.example', phone:'(480) 555-0110', plan_id:'growth', trial:false });
