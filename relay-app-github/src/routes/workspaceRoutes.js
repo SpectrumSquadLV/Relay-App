@@ -185,6 +185,46 @@ router.get('/clients/:id/record', (req, res) => {
   });
 });
 
+// The practice's own intake link, and sending it to a family.
+//
+// The link is public and unauthenticated by design -- a parent opens it on a
+// phone with no account -- so the only thing that scopes it is the practice
+// slug, which is built here from the session rather than typed by anyone.
+router.get('/intake-link', (req, res) => {
+  const org = get(`SELECT slug, name FROM organizations WHERE id = ?`, [req.orgId]);
+  if (!org) return res.status(404).json({ error: 'Practice not found' });
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.json({ url: `${base}/intake.html?p=${encodeURIComponent(org.slug)}`, practice: org.name });
+});
+
+router.post('/intake-link/send', (req, res) => {
+  const org = get(`SELECT slug, name FROM organizations WHERE id = ?`, [req.orgId]);
+  if (!org) return res.status(404).json({ error: 'Practice not found' });
+  const to = String((req.body && req.body.email) || '').trim();
+  if (!to) return res.status(400).json({ error: 'An email address is required.' });
+  const name = String((req.body && req.body.name) || '').trim();
+  const base = `${req.protocol}://${req.get('host')}`;
+  const url = `${base}/intake.html?p=${encodeURIComponent(org.slug)}`;
+
+  // Recorded against the lead when we know which one, so the invitation shows
+  // up in that family's communication history rather than floating free.
+  const entityId = (req.body && req.body.lead_id) || null;
+  Repo.insert(req.orgId, 'messages', {
+    channel: 'email', direction: 'out',
+    entity_type: entityId ? 'lead' : 'organization', entity_id: entityId || req.orgId,
+    from_addr: `care@${org.slug}.com`, to_addr: to,
+    subject: `Getting started with ${org.name}`,
+    body: `${name ? name + ', w' : 'W'}elcome. Please complete our new patient intake form — it takes a few minutes on your phone, and you can photograph your insurance card right in the form: ${url}`,
+    status: 'sent', created_at: now(),
+  });
+  Repo.insert(req.orgId, 'activity_logs', {
+    entity_type: entityId ? 'lead' : 'organization', entity_id: entityId || req.orgId,
+    kind: 'automation', summary: `Intake form sent to ${to}`, created_at: now(),
+  });
+
+  res.json({ ok: true, url, sent_to: to });
+});
+
 // Tasks
 router.get('/tasks', (req, res) => {
   const smap = staffMap(req.orgId);

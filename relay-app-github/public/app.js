@@ -403,12 +403,63 @@ async function wsClients(wrap) {
   const rows = clients.map(c => `<tr class="clickable" data-client="${c.id}"><td><b>${esc(c.client_name)}</b><div style="font-size:12px;color:var(--muted)">${esc(c.contact_name)}</div></td>
     <td>${c.address ? esc(c.address) : '<span style="color:var(--muted)">— add —</span>'} ${c.lat != null ? '<span class="pill green" style="margin-left:4px">📍 located</span>' : (c.address ? '<span class="pill amber" style="margin-left:4px">not located</span>' : '')}</td>
     <td>${esc(c.insurance || '—')}</td><td>${esc(c.assigned_name || '—')}</td><td><span class="pill ${c.stage === 'active' ? 'green' : 'blue'}">${esc(c.stage)}</span></td></tr>`).join('');
-  wrap(`<div class="page-head"><h1>Clients</h1><p>${clients.length} active clients. Click a client to set their home address — Relay locates it on the map automatically.</p></div>
+  wrap(`<div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div><h1>Clients</h1><p>${clients.length} active clients. Click a client to open their full record.</p></div>
+      <button class="btn btn-primary" id="send_intake">✉ Send intake form</button>
+    </div>
     <div class="card" style="padding:0;overflow-x:auto"><table><thead><tr><th>Client</th><th>Home address</th><th>Insurance</th><th>Assigned</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div>`);
   // Clicking a client opens the full chart. Setting the home address is still
   // there, as a button inside the record rather than the only thing a click
   // could do.
   $('#content').querySelectorAll('[data-client]').forEach(tr => tr.onclick = () => clientRecord(tr.dataset.client, wrap));
+  const si = $('#send_intake'); if (si) si.onclick = () => sendIntakeModal();
+}
+
+// Share the practice's intake link, or email it to a family. The link is
+// public on purpose -- a parent opens it on a phone with no account -- so the
+// useful thing here is getting it to them, and recording that we did.
+async function sendIntakeModal(lead) {
+  let info;
+  try { info = await api('/workspace/intake-link'); }
+  catch (e) { toast('Could not build the intake link'); return; }
+
+  const m = document.createElement('div'); m.className = 'modal-bg';
+  m.innerHTML = `<div class="modal" style="width:560px;max-width:94vw">
+    <div class="modal-h">Send the intake form</div>
+    <div class="modal-b">
+      <p style="margin-top:0;color:var(--muted);font-size:13.5px">
+        Families open this on a phone — no login. They can photograph both sides of their
+        insurance card inside the form, and Relay opens the benefits check the moment it arrives.</p>
+      <div class="fld"><label>Your intake link</label>
+        <input id="il_url" readonly value="${esc(info.url)}" style="font-size:13px"></div>
+      <button class="btn btn-ghost" id="il_copy" style="width:100%;margin-bottom:6px">Copy link</button>
+      <div class="fld"><label>Or email it</label>
+        <input id="il_email" type="email" placeholder="parent@example.com" value="${esc((lead && lead.email) || '')}"></div>
+      <div class="fld"><label>Their name (optional)</label>
+        <input id="il_name" value="${esc((lead && lead.contact_name) || '')}"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn btn-ghost" id="il_close">Close</button>
+      <button class="btn btn-primary" id="il_send">Send intake form</button>
+    </div></div>`;
+  document.body.appendChild(m);
+  const close = () => m.remove();
+  $('#il_close', m).onclick = close; m.onclick = (e) => { if (e.target === m) close(); };
+  $('#il_copy', m).onclick = () => {
+    const f = $('#il_url', m); f.select(); f.setSelectionRange(0, 99999);
+    (navigator.clipboard ? navigator.clipboard.writeText(f.value) : Promise.reject())
+      .then(() => toast('Link copied')).catch(() => { document.execCommand('copy'); toast('Link copied'); });
+  };
+  $('#il_send', m).onclick = async () => {
+    const email = $('#il_email', m).value.trim();
+    if (!email) { toast('Enter an email address'); return; }
+    const btn = $('#il_send', m); btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      await api('/workspace/intake-link/send', { method: 'POST',
+        body: { email, name: $('#il_name', m).value.trim(), lead_id: lead ? lead.id : null } });
+      close(); toast('Intake form sent to ' + email);
+    } catch (e) { toast(e.message || 'Could not send'); btn.disabled = false; btn.textContent = 'Send intake form'; }
+  };
 }
 
 // ---- Client record -----------------------------------------------------
