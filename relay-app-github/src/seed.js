@@ -9,15 +9,50 @@ const daysAgo = (d) => new Date(Date.now() - d*864e5).toISOString();
 const daysFromNow = (d) => new Date(Date.now() + d*864e5).toISOString();
 
 function bootstrap() {
-  // plans (prices are placeholders; owner can change)
-  if (!get(`SELECT 1 FROM plans LIMIT 1`)) {
-    const plans = [
-      ['starter','Starter',19900,75000,3,500,2000,10,{sms_messaging:true,advanced_automations:false,ai_features:false,analytics:true,custom_branding:true,multiple_pipelines:false},0],
-      ['growth','Growth',39900,150000,15,2000,10000,50,{sms_messaging:true,advanced_automations:true,ai_features:false,analytics:true,custom_branding:true,multiple_pipelines:true},1],
-      ['pro','Pro',79900,250000,999,10000,50000,999,{sms_messaging:true,advanced_automations:true,ai_features:true,analytics:true,custom_branding:true,multiple_pipelines:true},2],
-    ];
-    plans.forEach(p => run(`INSERT INTO plans (id,name,monthly_price,setup_fee,max_users,sms_allowance,email_allowance,automation_limit,features_json,sort) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [p[0],p[1],p[2],p[3],p[4],p[5],p[6],p[7],JSON.stringify(p[8]),p[9]]));
+  // Plans are sized by STAFF COUNT, not by capability.
+  //
+  // Every practice gets the whole product. A three-person clinic verifying
+  // benefits needs the same automations, the same intake, the same
+  // authorization tracking as a fifty-person group -- withholding those from
+  // the smallest customers sells them a CRM that lets things fall through the
+  // cracks, which is the opposite of the pitch. What scales with size is the
+  // number of people using it, so that is what scales with price.
+  //
+  // Prices and band edges are the owner's to set; these carry over the
+  // existing price points.
+  const ALL_FEATURES = {
+    sms_messaging: true, advanced_automations: true, ai_features: true,
+    analytics: true, custom_branding: true, multiple_pipelines: true,
+  };
+  const PLANS = [
+    // id, name, monthly, setup, max staff, sms, email, automations, sort, blurb
+    ['solo',     'Solo',      19900,  75000,   5,  1000,  5000, 999, 0, 'Up to 5 staff'],
+    ['practice', 'Practice',  39900, 150000,  20,  4000, 20000, 999, 1, '6 to 20 staff'],
+    ['group',    'Group',     79900, 250000,  50, 12000, 60000, 999, 2, '21 to 50 staff'],
+    ['network',  'Network',  129900, 350000, 999, 40000, 200000, 999, 3, '50+ staff'],
+  ];
+  const upsertPlan = (p) => {
+    const row = [p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], JSON.stringify(ALL_FEATURES), p[8], p[9]];
+    if (get(`SELECT 1 FROM plans WHERE id=?`, [p[0]])) {
+      run(`UPDATE plans SET name=?, monthly_price=?, setup_fee=?, max_users=?, sms_allowance=?,
+             email_allowance=?, automation_limit=?, features_json=?, sort=? WHERE id=?`,
+        [p[1], p[2], p[3], p[4], p[5], p[6], p[7], JSON.stringify(ALL_FEATURES), p[8], p[0]]);
+    } else {
+      run(`INSERT INTO plans (id,name,monthly_price,setup_fee,max_users,sms_allowance,email_allowance,automation_limit,features_json,sort)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`, row.slice(0, 10));
+    }
+  };
+  PLANS.forEach(upsertPlan);
+
+  // Retire the capability-tiered plans, without stranding anyone on them: an
+  // organization still pointing at an old plan is moved to the size band that
+  // matches what it was already paying for.
+  const RETIRED = { starter: 'solo', growth: 'practice', pro: 'group' };
+  for (const [oldId, newId] of Object.entries(RETIRED)) {
+    if (!get(`SELECT 1 FROM plans WHERE id=?`, [oldId])) continue;
+    const target = get(`SELECT monthly_price FROM plans WHERE id=?`, [newId]);
+    run(`UPDATE organizations SET plan_id=?, mrr=? WHERE plan_id=?`, [newId, target.monthly_price, oldId]);
+    run(`DELETE FROM plans WHERE id=?`, [oldId]);
   }
   getMasterTemplate(); // ensure row exists
 
@@ -29,7 +64,7 @@ function bootstrap() {
 
   // demo org
   if (!get(`SELECT 1 FROM organizations WHERE is_demo=1 LIMIT 1`)) {
-    const { org } = provisionOrg({ name:'Relay Demo', owner_name:'Dana Rivera', owner_email:'dana@relaydemo.com', phone:'(702) 555-0142', website:'relaydemo.com', industry:'aba', plan_id:'growth', trial:false, is_demo:true });
+    const { org } = provisionOrg({ name:'Relay Demo', owner_name:'Dana Rivera', owner_email:'dana@relaydemo.com', phone:'(702) 555-0142', website:'relaydemo.com', industry:'aba', plan_id:'practice', trial:false, is_demo:true });
     run(`UPDATE organizations SET mrr=39900 WHERE id=?`, [org.id]);
     seedDemoContent(org.id);
   }
@@ -50,9 +85,9 @@ function bootstrap() {
 
   // a couple of extra sample customer orgs so the owner portal isn't empty
   if (get(`SELECT COUNT(*) c FROM organizations`).c < 3) {
-    const a = provisionOrg({ name:'Bright Steps ABA', owner_name:'Maria Lopez', owner_email:'maria@brightsteps.example', phone:'(480) 555-0110', plan_id:'growth', trial:false });
+    const a = provisionOrg({ name:'Bright Steps ABA', owner_name:'Maria Lopez', owner_email:'maria@brightsteps.example', phone:'(480) 555-0110', plan_id:'practice', trial:false });
     run(`UPDATE organizations SET mrr=39900, created_at=? WHERE id=?`, [daysAgo(52), a.org.id]);
-    const b = provisionOrg({ name:'Cornerstone Home Health', owner_name:'James Okafor', owner_email:'james@cornerstone.example', phone:'(702) 555-0188', plan_id:'starter', trial:true });
+    const b = provisionOrg({ name:'Cornerstone Home Health', owner_name:'James Okafor', owner_email:'james@cornerstone.example', phone:'(702) 555-0188', plan_id:'solo', trial:true });
     run(`UPDATE organizations SET created_at=?, last_activity_at=? WHERE id=?`, [daysAgo(9), daysAgo(6), b.org.id]);
   }
 }
